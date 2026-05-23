@@ -51,15 +51,7 @@ async def check_rl_policy_health(model_path: str):
     """
         Args:
             model_path: a valid model location in the local filesystem
-        Returns:device = torch.device("cpu")
-        model, _ = load_gnn_model(model_path, device)
-        graph, _ = load_dataset(graph_path)
-        with torch.no_grad():
-            action = model(graph.x, graph.edge_index)
-        return {"action": action.tolist()}
-    except Exception as e:
-        return {"status": "fault", "error": str(e)}
-    
+        Returns:    
             status: healthy / fault
     """
 
@@ -88,4 +80,7 @@ async def get_rl_policy_action(model_path: str, algorithm: str, graph_path: str)
         return {"action": action.tolist()}
     except Exception as e:
         return {"status": "fault", "error": f"Failed to load agent: {str(e)}"}
+    
+
+
 

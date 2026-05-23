@@ -6,6 +6,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
 
+from app.api.main import api_router
+from app import db as app_db
+
 app = FastAPI()
 
 app.add_middleware(
@@ -15,6 +18,20 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+app.include_router(api_router, prefix="/api")
+
+
+@app.on_event("startup")
+async def startup_event():
+    # initialize MongoDB (uses default localhost URI and database name)
+    await app_db.init_db()
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    await app_db.close_db()
 
 jobs: Dict[str, Any] = {}
 
