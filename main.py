@@ -5,11 +5,75 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
+from decouple import config
+from motor.motor_asyncio import AsyncIOMotorClient
+
 
 from app.api.main import api_router
-from app import db as app_db
+from app.core import db as app_db
 
-app = FastAPI()
+from contextlib import asynccontextmanager
+
+# Configure max upload size (100MB)
+import os
+os.environ.setdefault("STARLETTE_MAX_UPLOAD_SIZE", "104857600")
+
+
+DB_URL = config("DB_URL", cast=str)
+DB_NAME = config("DB_NAME", cast=str)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await app_db.init_db(uri=DB_URL, db_name=DB_NAME)
+    print(f"Connected to MongoDB at {DB_URL}, using database '{DB_NAME}'")
+    
+    # Pre-load default design if database is empty
+    designs = await app_db.list_designs()
+    if not designs:
+        print("Database is empty. Loading default ariane133 design...")
+        try:
+            from app.api.routes.designs import extract_design_from_pt
+            import json
+            from pathlib import Path
+            from app.models import Design
+            
+            base_path = Path("/home/quantap/Documents/projects_/yearly-project/hierarchical-marl-chip-placement/src/data/preprocessed/real-connection/ariane133/Nangate45")
+            pt_path = base_path / "ariane133_Nangate45_graph.pt"
+            json_path = base_path / "metadata-ariane133-Nangate45.json"
+            
+            if pt_path.exists() and json_path.exists():
+                with open(pt_path, "rb") as f:
+                    pt_data = f.read()
+                design_data = extract_design_from_pt(pt_data, "ariane133_Nangate45_graph.pt")
+                
+                with open(json_path, "r") as f:
+                    metadata = json.load(f)
+                    
+                design_payload = {
+                    "name": "ariane133_Nangate45_graph",
+                    "metadata": metadata,
+                    "data": design_data,
+                }
+                
+                await app_db.create_design(Design(**design_payload))
+                print("Successfully loaded default design.")
+            else:
+                print("Default design files not found.")
+        except Exception as e:
+            print(f"Failed to load default design: {e}")
+
+    yield
+    await app_db.close_db()
+
+
+app = FastAPI(
+    lifespan=lifespan,
+    title="Hierarchical MARL Chip Placement Backend",
+    openapi_url="/api/openapi.json",
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -20,18 +84,6 @@ app.add_middleware(
 )
 
 
-app.include_router(api_router, prefix="/api")
-
-
-@app.on_event("startup")
-async def startup_event():
-    # initialize MongoDB (uses default localhost URI and database name)
-    await app_db.init_db()
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    await app_db.close_db()
 
 jobs: Dict[str, Any] = {}
 
@@ -59,6 +111,9 @@ async def background_optimization(job_id: str, hpwl_before: float):
         else:
             jobs[job_id]["progress"] = min(99, p)
 
+
+
+
 @app.post("/api/optimize")
 async def optimize(req: OptimizeRequest):
     # Create a base36-like hex string for ID to match the old format somewhat closely
@@ -77,6 +132,10 @@ async def get_job(job_id: str):
     if job_id not in jobs:
         raise HTTPException(status_code=404, detail="Job not found")
     return jobs[job_id]
+
+# Register API routes under /api
+app.include_router(api_router, prefix="/api")
+
 
 if __name__ == "__main__":
     import uvicorn

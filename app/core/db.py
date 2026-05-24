@@ -71,3 +71,29 @@ async def get_design(design_id: str) -> Optional[Dict[str, Any]]:
     doc["id"] = str(doc.get("_id"))
     doc.pop("_id", None)
     return doc
+
+
+async def create_result(design_id: str, result: Dict[str, Any]) -> Dict[str, Any] | None:
+    """Store a benchmarking / run result for a design."""
+    d = dict(result)
+    d["design_id"] = design_id
+    if "created_at" not in d:
+        d["created_at"] = datetime.now(timezone.utc)
+    res = await get_db().results.insert_one(d)
+    try:
+        saved = await get_db().results.find_one({"_id": res.inserted_id})
+        saved["id"] = str(saved.get("_id"))
+        saved.pop("_id", None)
+        return saved
+    except Exception:
+        return {"Exception": "Failed to retrieve saved result"}
+
+
+async def list_results(design_id: str) -> List[Dict[str, Any]]:
+    out = []
+    cursor = get_db().results.find({"design_id": design_id}).sort("created_at", -1)
+    async for doc in cursor:
+        doc["id"] = str(doc.get("_id"))
+        doc.pop("_id", None)
+        out.append(doc)
+    return out

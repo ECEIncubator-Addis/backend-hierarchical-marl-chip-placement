@@ -1,9 +1,12 @@
 import torch 
 from fastapi import APIRouter
 from app.api.routes.utils import load_dataset, load_gnn_model, load_agent
+
+
+
+
+
 router = APIRouter(tags=["model-requests"], prefix="/model-requests")
-
-
 @router.get("/check")
 async def check_health():
     return {"message": "success"}
